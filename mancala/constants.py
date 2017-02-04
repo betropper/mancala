@@ -1,4 +1,4 @@
-""" Mancala constants file. """
+#!/usr/bin/env python3
 
 # Constants, reflective of index within board
 P1_PITS = 0

@@ -1,0 +1,241 @@
+#!/usr/bin/env python3
+import sys
+
+stones = 4
+pits = 6
+P1_PITS = 0
+P2_PITS = 2
+P1_STORE = 1
+P2_STORE = 3
+
+class InvalidBoardArea(Exception):
+    """ Exception flagged when moves are attempted on an unknown area. """
+    pass
+
+class InvalidMove(Exception):
+    """ Exception flagged when no stones are available at given index. """
+    
+
+class Player():
+    """ A player of Mancala. """
+
+    def __init__(self, number=None, board=None, name='Player'):
+        self.name = name
+        self.number = number
+        self.board = board
+
+    def __str__(self):
+        return "Player: %s" % self.name
+
+    def get_name(self):
+        """ Returns player name. """
+        return self.name
+
+class HumanPlayer(Player):
+    """ A human player. """
+
+    def __init__(self, number, board, name=None):
+        super(HumanPlayer, self).__init__(number, board)
+        if name:
+            self.name = name
+        else:
+            self.name = self.get_human_name()
+
+    def get_human_name(self):
+        """ Asks human players to specify their name. """
+        return input("Please input your name: ")
+
+    def get_next_move(self):
+        """ Gets next move from a human player. """
+        while True:
+            value = input("Please input your next move (1 to 6): ")
+            try:
+                if int(value) <= 6 and int(value) >= 1:
+                    return int(value) - 1
+                else:
+                    print("Please make sure your number is between 1 and 6.")
+            except ValueError:
+                print("Please input a real number!")
+
+class Board():
+    def __init__(self):
+        self.pits = [[stones] * pits, [0], [stones] * pits, [0]]
+    def __str__(self):
+            """ Returns the current board as a printable string to show the user.
+            Note that the order of player 2 pits are displayed in reverse
+            from the list index to give the appearance of a loop.
+            """
+            return "   %d  %d  %d  %d  %d  %d\n %d                    %d\n   %d  %d  %d  %d  %d  %d\n" % (
+                        # Player 2 pits in top row
+                        self.pits[2][5], self.pits[2][4], self.pits[2][3],
+                        self.pits[2][2], self.pits[2][1], self.pits[2][0],
+                        # Player 2 & 1 stores in middle row
+                        self.pits[3][0], self.pits[1][0],
+                        # Player 1 pits on bottom row
+                        self.pits[0][0], self.pits[0][1], self.pits[0][2],
+                        self.pits[0][3], self.pits[0][4], self.pits[0][5])
+    def _move_stones(self, player_num, start_index):
+        """ Moves stones by the Player associated with player_num,
+        starting at the given index.
+        Returns: new state of Board.board, earned_free_move (bool)
+        player_num: integer from Player.number class
+        start_index: integer specified by player (must be 0-5)
+        """
+        if player_num == 1:
+            current_area = P1_PITS
+        else:
+            current_area = P2_PITS
+        stones_grabbed = self.pits[current_area][start_index] 
+        self.pits[current_area][start_index] = 0
+
+        # Ready a moving index
+        index = start_index + 1
+
+        for stone in range(stones_grabbed):
+            try:
+                # Try to place in adjacent pit prior to incrementing index.
+                self.pits[current_area][index] += 1
+                # Stone successfully placed, so increase index.
+                index += 1
+            except IndexError:
+                current_area += 1
+                if current_area > 3:
+                    current_area = 0
+                # Check to ensure opposing store is skipped.
+                if player_num == 1 and current_area == P2_STORE:
+                    current_area = 0
+                elif player_num == 2 and current_area == P1_STORE:
+                    current_area += 1
+                # Reset index and increment stone at current position
+                index = 0
+                self.pits[current_area][index] += 1
+
+        if self._earned_free_move(player_num, current_area):
+            earned_free_move = True
+        else:
+            earned_free_move = False
+
+        # If last move earned a capture, process it.
+        if self._earned_capture(player_num, current_area, index):
+            self.board = self._process_capture(current_area, index)
+
+        return self.board, earned_free_move
+
+    def _earned_free_move(self, player_num, last_area):
+        """ Checks whether a free move was earned. """
+        if player_num == 1 and last_area == 1:
+            print("Earned free move!")
+            return True
+        elif player_num == 2 and last_area == 3:
+            print("Earned free move!")
+            return True
+        else:
+            return False
+
+    def _earned_capture(self, player_num, last_area, last_index):
+        """ Checks whether the last move earned a capture.
+        last_area: integer associated with last board area
+        last_index: integer of the last move's index
+        """
+
+        opposing_area, opposing_index = self._get_opposing_area_and_index(
+            last_area, last_index)
+
+        # Check whether last move was in Player's own pits.
+        if player_num == 1:
+            if not last_area == 0:
+                return False
+        elif player_num == 2:
+            if not last_area == 2:
+                return False
+        else:
+            pass
+
+        # Check whether last move's pit now has more than 1 stone.
+        if self.board[last_area][last_index] > 1:
+            return False
+
+        # Check whether opposite pit has capturable stones.
+        elif self.board[opposing_area][opposing_index] == 0:
+            return False
+
+        # Placed stone in own empty pit, adjacent capturable stones.
+        else:
+            return True
+
+    def _get_opposing_area_and_index(self, orig_area, index):
+        """ Returns opposing_area, opposing_index
+        Optionally returns as tuple for assertion testing.
+         """
+        if orig_area == P1_PITS:
+            opposing_area = P2_PITS
+        elif orig_area == P2_PITS:
+            opposing_area = P1_PITS
+        elif orig_area == P1_STORE:
+            opposing_area = P2_STORE
+        elif orig_area == P2_STORE:
+            opposing_area = P1_STORE
+        else:
+            raise InvalidBoardArea
+
+        rev_index = [5,4,3,2,1,0]
+        print(index)
+        opposing_index = rev_index[index]
+
+        return opposing_area, opposing_index
+
+
+class Match():
+    def __init__(self, player1_type=Player, player2_type=Player):
+        """ Initializes a new match. """
+        self.board = Board()
+        self.players = [player1_type(1, self.board), player2_type(2, self.board)]
+        self.player1 = self.players[0]
+        self.player2 = self.players[1]
+        self.current_turn = self.player1
+
+    def handle_next_move(self):
+        """ Shows board and handles next move. """
+        print(self.board)
+        next_move = self.get_next_move()
+        try:
+            self.board.pits, free_move_earned = self.board._move_stones(self.current_turn.number, next_move)
+        except InvalidMove:
+            # Check whether game was won by AI.
+            if self._check_for_winner():
+                sys.exit()
+            if self.current_turn.__class__ == HumanPlayer:
+                print("Please select a move with stones you can move.")
+            self.handle_next_move()
+
+        # Check whether game was won.
+        if self._check_for_winner():
+            sys.exit()
+
+        # Check whether free move was earned
+        if free_move_earned:
+            self.handle_next_move()
+        else:
+            self._swap_current_turn()
+            self.handle_next_move()
+
+
+    def reverse_index(index):
+        """ Returns the mirror index to the one given. """
+        rev_index = [5,4,3,2,1,0]
+        return rev_index[index] 
+
+def main():
+    """ Script to begin a match of Mancala. """
+    print("Welcome to Mancala!")
+    match = Match(player1_type=HumanPlayer, player2_type=HumanPlayer)
+    match.handle_next_move()
+
+if __name__ == '__main__':
+    main()
+
+#board = Board()
+#print(board.pits)
+#print(board)
+#board._move_stones(1,1)
+#print(board)
